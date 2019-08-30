@@ -112,7 +112,9 @@ void setup() {
 
   Serial.begin(115200);  // Default speed of esp32
   EEPROM.get(LCD_VALUES_ADDRESS, lcdValues);
+  lcdValues.on = true; // Set on light at boot
   lcd_setup();
+  welcome_message();
   network_connect();
   time_init();
   mqtt_connect();
@@ -121,6 +123,16 @@ void setup() {
 
   xTaskCreatePinnedToCore( lcd_output_t, "LCD Update", 8192 , NULL, 2, NULL, 1 );
   xTaskCreatePinnedToCore( get_weather_t, "Get Weather", 8192 , NULL, 3, NULL, 1 );
+}
+
+void welcome_message() {
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Welcome to the");
+  lcd.setCursor(0, 1);
+  lcd.print("Klauss-o-meter");
+  delay(3000);
 }
 
 void get_weather_t(void * pvParameters ) {
@@ -176,6 +188,7 @@ void network_connect() {
   Serial.print("Connect to WPA SSID: ");
   Serial.println(WIFI_SSID);
 
+  lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Waiting for");
   lcd.setCursor(0, 1);
@@ -218,6 +231,7 @@ void mqtt_connect() {
   Serial.print("Attempting to connect to the MQTT broker: ");
   Serial.println(MQTT_SERVER);
 
+  lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Connecting to: ");
   lcd.setCursor(0, 1);
@@ -239,12 +253,12 @@ void mqtt_connect() {
   }
 
   for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
+    mqttClient.subscribe(settings[i].topic);
   }
 
   lcd.setCursor(0, 0);
   lcd.print("Connected to: ");
   delay(1000);  // For the message on the LCD to be read
-
 
 }
 
@@ -256,7 +270,6 @@ void lcd_setup() {
   byte charSame[8] = {B00000, B00100, B00010, B11111, B00010, B00100, B00000, B00000};
 
   lcd.init();
-  set_lcd_values();
   lcd.createChar(CHAR_UP, charUp);
   lcd.createChar(CHAR_DOWN, charDown);
   lcd.createChar(CHAR_SAME, charSame);
@@ -325,6 +338,12 @@ void lcd_output_t(void * pvParameters ) {
   int line2Counter = 0;
 
   while (true) {
+    if (lcdValues.on == true) {
+      lcd.backlight();
+    }
+    else {
+      lcd.noBacklight();
+    }
     lcd.setCursor(0, 0);
     for (int i = 0; i <= LCD_COL; i++) {
       lcd.write(lcdOutput.line1[i]);
@@ -393,17 +412,6 @@ void update_temperature(String recMessage, int index) {
   }
 }
 
-void set_lcd_values() {
-
-  if (lcdValues.on == true) {
-    lcd.backlight();
-  }
-  else {
-    //lcd.NoBacklight();
-  }
-
-}
-
 void update_mqtt_settings() {
 
   String topic;
@@ -428,7 +436,6 @@ void update_on_off(String topic, String recMessage, int index) {
   if (recMessage == "0") {
     lcdValues.on = false;
   }
-  set_lcd_values();
   update_mqtt_settings();
   // Store for reboot
   EEPROM.put(LCD_VALUES_ADDRESS, lcdValues);

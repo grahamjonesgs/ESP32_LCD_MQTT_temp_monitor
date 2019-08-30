@@ -94,6 +94,16 @@ Weather weather = {0.0, 0, 0.0, "", "", 0};
 LcdOutput lcdOutput = {{CHAR_BLANK}, {CHAR_BLANK}, true};
 #define LCD_VALUES_ADDRESS 0
 
+// for touch
+#define TOUCH_ARRAY_SIZE 100
+#define SENSITIVITY 3
+#define TOUCH_LIGHT_DELAY 10
+int touch_array[TOUCH_ARRAY_SIZE];
+int touch_counter = 0;
+bool touch_looped = false;
+bool touch_light = false;
+long touch_light_pressed = 0;
+
 WiFiClientSecure wifiClient;
 WiFiClientSecure wifiClientWeather;
 MqttClient mqttClient(wifiClient);
@@ -123,6 +133,7 @@ void setup() {
 
   xTaskCreatePinnedToCore( lcd_output_t, "LCD Update", 8192 , NULL, 2, NULL, 1 );
   xTaskCreatePinnedToCore( get_weather_t, "Get Weather", 8192 , NULL, 3, NULL, 1 );
+  //xTaskCreatePinnedToCore( touch_check_t, "Touch", 8192 , NULL, 4, NULL, 1 );
 }
 
 void welcome_message() {
@@ -133,6 +144,48 @@ void welcome_message() {
   lcd.setCursor(0, 1);
   lcd.print("Klauss-o-meter");
   delay(3000);
+}
+
+void touch_check_t(void * pvParameters) {
+  long touch_total;
+  int touch_loop_max;
+  float touch_average;
+  int touch_sensor_value = 0;
+
+  while (true) {
+    touch_sensor_value = touchRead(T0);
+    touch_array[touch_counter] = touch_sensor_value;
+    touch_counter++;
+    if (touch_counter > TOUCH_ARRAY_SIZE - 1) {
+      touch_counter = 0;
+      touch_looped = true;
+    }
+    if (touch_looped) {
+      touch_loop_max = TOUCH_ARRAY_SIZE;
+    }
+    else
+    {
+      touch_loop_max = touch_counter;
+    }
+    touch_total = 0;
+    for (int i = 0; i < touch_loop_max; i++) {
+      touch_total = touch_total + touch_array[i];
+    }
+    touch_average = (float)touch_total / (float)touch_loop_max;
+    if (touch_sensor_value < touch_average - SENSITIVITY ) {
+      Serial.println("Yes");
+      touch_light_pressed = millis();
+      touch_light = true;
+    }
+    else
+    {
+      Serial.println("No touch_light_pressed: " + String((long)touch_light_pressed) + "now: " + String(millis()));
+      if (touch_light_pressed + TOUCH_LIGHT_DELAY > millis()) {
+        touch_light = false;
+      }
+    }
+    delay(100);
+  }
 }
 
 void get_weather_t(void * pvParameters ) {
@@ -338,7 +391,7 @@ void lcd_output_t(void * pvParameters ) {
   int line2Counter = 0;
 
   while (true) {
-    if (lcdValues.on == true) {
+    if (lcdValues.on || touch_light) {
       lcd.backlight();
     }
     else {

@@ -64,8 +64,8 @@ struct LcdOutput {
 #define DESC_ONOFF "ONO"
 
 // LCD Character settings
-#define CHAR_UP 0
-#define CHAR_DOWN 1
+#define CHAR_UP 1
+#define CHAR_DOWN 2
 #define CHAR_SAME 3
 #define CHAR_STAR 42
 #define CHAR_BLANK 32
@@ -96,8 +96,9 @@ LcdOutput lcdOutput = {{CHAR_BLANK}, {CHAR_BLANK}, true};
 
 // for touch
 #define TOUCH_ARRAY_SIZE 100
-#define SENSITIVITY 3
-#define TOUCH_LIGHT_DELAY 10
+#define SENSITIVITY 4  // lower more sensitive
+#define TOUCH_LOOPS_NEEDED 3  // number of touched loops to turn on 
+#define TOUCH_LIGHT_DELAY 10L
 int touch_array[TOUCH_ARRAY_SIZE];
 int touch_counter = 0;
 bool touch_looped = false;
@@ -122,27 +123,26 @@ void setup() {
 
   Serial.begin(115200);  // Default speed of esp32
   EEPROM.get(LCD_VALUES_ADDRESS, lcdValues);
-  lcdValues.on = true; // Set on light at boot
-  lcd_setup();
+  xTaskCreatePinnedToCore( lcd_output_t, "LCD Update", 8192 , NULL, 2, NULL, 1 ); // After this no other calls to lcd.xxxxx
+  delay(3000);
   welcome_message();
   network_connect();
   time_init();
   mqtt_connect();
   lcd_update_temp;
-  update_mqtt_settings();
+  //update_mqtt_settings();
 
-  xTaskCreatePinnedToCore( lcd_output_t, "LCD Update", 8192 , NULL, 2, NULL, 1 );
-  xTaskCreatePinnedToCore( get_weather_t, "Get Weather", 8192 , NULL, 3, NULL, 1 );
-  //xTaskCreatePinnedToCore( touch_check_t, "Touch", 8192 , NULL, 4, NULL, 1 );
+  xTaskCreatePinnedToCore( get_weather_t, "Get Weather", 8192 , NULL, 3, NULL, 0 );
+  xTaskCreatePinnedToCore( touch_check_t, "Touch", 8192 , NULL, 4, NULL, 0 );
+  xTaskCreatePinnedToCore( receive_mqtt_messages_t, "mqtt", 8192 , NULL, 1, NULL, 1 );
+
 }
 
 void welcome_message() {
 
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Welcome to the");
-  lcd.setCursor(0, 1);
-  lcd.print("Klauss-o-meter");
+  String("Welcome to the").toCharArray(lcdOutput.line1, LCD_COL);
+  String("Klauss-o-meter").toCharArray(lcdOutput.line2, LCD_COL);
+
   delay(3000);
 }
 
@@ -151,11 +151,14 @@ void touch_check_t(void * pvParameters) {
   int touch_loop_max;
   float touch_average;
   int touch_sensor_value = 0;
+  int loops_touched = 0;
 
   while (true) {
+    delay(100);
     touch_sensor_value = touchRead(T0);
     touch_array[touch_counter] = touch_sensor_value;
     touch_counter++;
+
     if (touch_counter > TOUCH_ARRAY_SIZE - 1) {
       touch_counter = 0;
       touch_looped = true;
@@ -172,25 +175,33 @@ void touch_check_t(void * pvParameters) {
       touch_total = touch_total + touch_array[i];
     }
     touch_average = (float)touch_total / (float)touch_loop_max;
+
     if (touch_sensor_value < touch_average - SENSITIVITY ) {
-      Serial.println("Yes");
-      touch_light_pressed = millis();
+      loops_touched++;
+    }
+    else
+    {
+      loops_touched = 0;
+    }
+    if (loops_touched >= TOUCH_LOOPS_NEEDED ) {
+      touch_light_pressed = now();
       touch_light = true;
     }
     else
     {
-      Serial.println("No touch_light_pressed: " + String((long)touch_light_pressed) + "now: " + String(millis()));
-      if (touch_light_pressed + TOUCH_LIGHT_DELAY > millis()) {
+      if (touch_light_pressed + TOUCH_LIGHT_DELAY < now()) {
         touch_light = false;
       }
     }
-    delay(100);
+
+    
   }
 }
 
 void get_weather_t(void * pvParameters ) {
 
   while (true) {
+    delay(2000);
     if (now() - weather.updateTime > WEATHER_UPDATE_INTERVAL) {
       if (wifiClientWeather.connect(weather_server, 443)) {
         wifiClientWeather.print("GET /data/2.5/weather?");
@@ -229,7 +240,7 @@ void get_weather_t(void * pvParameters ) {
       wifiClientWeather.flush();
       wifiClientWeather.stop();
     }
-    delay(2000);
+    
   }
 }
 
@@ -241,24 +252,22 @@ void network_connect() {
   Serial.print("Connect to WPA SSID: ");
   Serial.println(WIFI_SSID);
 
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Waiting for");
-  lcd.setCursor(0, 1);
-  lcd.print(WIFI_SSID);
+  String("Waiting for").toCharArray(lcdOutput.line1, LCD_COL);
+  String(WIFI_SSID).toCharArray(lcdOutput.line2, LCD_COL);
+
 
   while (WiFi.begin(WIFI_SSID, WIFI_PASSWORD) != WL_CONNECTED) {
     Serial.print(".");
-    lcd.setCursor(11, 0);
-    lcd.print(lcdWait[lcdWaitCount]);
+    String("Waiting for" + lcdWait[lcdWaitCount]).toCharArray(lcdOutput.line1, LCD_COL);
+
     lcdWaitCount++;
     if (lcdWaitCount > (sizeof(lcdWait) / sizeof(lcdWait[0])) - 1) {
       lcdWaitCount = 0;
     }
     delay(500);
   }
-  lcd.setCursor(0, 0);
-  lcd.print("Connected to:   ");
+  String("Connected to:   ").toCharArray(lcdOutput.line1, LCD_COL);
+
 }
 
 void time_init() {
@@ -284,16 +293,14 @@ void mqtt_connect() {
   Serial.print("Attempting to connect to the MQTT broker: ");
   Serial.println(MQTT_SERVER);
 
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Connecting to: ");
-  lcd.setCursor(0, 1);
-  lcd.print(MQTT_SERVER);
+
+  String("Connecting to: ").toCharArray(lcdOutput.line1, LCD_COL);
+  String(MQTT_SERVER).toCharArray(lcdOutput.line2, LCD_COL);
+
 
   while (!mqttClient.connect(MQTT_SERVER, MQTT_PORT)) {
     Serial.print("MQTT connection failed");
-    lcd.setCursor(0, 0);
-    lcd.print("Can't connect");
+    String("Can't connect:").toCharArray(lcdOutput.line1, LCD_COL);
     delay(5000);
     ESP.restart();
   }
@@ -309,26 +316,11 @@ void mqtt_connect() {
     mqttClient.subscribe(settings[i].topic);
   }
 
-  lcd.setCursor(0, 0);
-  lcd.print("Connected to: ");
+  String("Connected to:  ").toCharArray(lcdOutput.line1, LCD_COL);
   delay(1000);  // For the message on the LCD to be read
 
 }
 
-void lcd_setup() {
-
-  //Sets up the special charaters in the LCD
-  byte charUp[8] = {B00100, B01110, B10101, B00100, B00100, B00100, B00100, B00000};
-  byte charDown[8] = {B00000, B00100, B00100, B00100, B00100, B10101, B01110, B00100};
-  byte charSame[8] = {B00000, B00100, B00010, B11111, B00010, B00100, B00000, B00000};
-
-  lcd.init();
-  lcd.createChar(CHAR_UP, charUp);
-  lcd.createChar(CHAR_DOWN, charDown);
-  lcd.createChar(CHAR_SAME, charSame);
-  lcd.backlight();
-
-}
 
 void lcd_update_temp() {
 
@@ -390,7 +382,24 @@ void lcd_output_t(void * pvParameters ) {
   int line1Counter = 0;
   int line2Counter = 0;
 
+
+  //Sets up the special charaters in the LCD
+  byte charUp[8] = {B00100, B01110, B10101, B00100, B00100, B00100, B00100, B00000};
+  byte charDown[8] = {B00000, B00100, B00100, B00100, B00100, B10101, B01110, B00100};
+  byte charSame[8] = {B00000, B00100, B00010, B11111, B00010, B00100, B00000, B00000};
+
+  lcd.init();
+  lcd.createChar(CHAR_UP, charUp);
+  lcd.createChar(CHAR_DOWN, charDown);
+  lcd.createChar(CHAR_SAME, charSame);
+  lcd.backlight();
+  String("                 ").toCharArray(lcdOutput.line1, LCD_COL + 1);
+  String("                 ").toCharArray(lcdOutput.line2, LCD_COL + 1);
+  lcdValues.on = true;
+
+
   while (true) {
+    delay(10);
     if (lcdValues.on || touch_light) {
       lcd.backlight();
     }
@@ -399,11 +408,23 @@ void lcd_output_t(void * pvParameters ) {
     }
     lcd.setCursor(0, 0);
     for (int i = 0; i <= LCD_COL; i++) {
-      lcd.write(lcdOutput.line1[i]);
+      if (lcdOutput.line1[i] == 0 ) {
+        lcd.write(' ');
+      }
+      else
+      {
+        lcd.write(lcdOutput.line1[i]);
+      }
     }
     lcd.setCursor(0, 1);
     for (int i = 0; i <= LCD_COL; i++) {
-      lcd.write(lcdOutput.line2[i]);
+      if (lcdOutput.line2[i] == 0 ) {
+        lcd.write(' ');
+      }
+      else
+      {
+        lcd.write(lcdOutput.line2[i]);
+      }
     }
 
   }
@@ -494,43 +515,54 @@ void update_on_off(String topic, String recMessage, int index) {
   EEPROM.put(LCD_VALUES_ADDRESS, lcdValues);
 }
 
-void receive_mqtt_messages() {
-  int messageSize = mqttClient.parseMessage();
+void receive_mqtt_messages_t(void * pvParams) {
+  int messageSize = 0;
   String topic;
   char recMessage[255] = {0};
   int index;
   bool readingMessageReceived;
 
-
-  if (messageSize) {   //Message received
-    topic = String(mqttClient.messageTopic());
-    mqttClient.read((unsigned char*)recMessage, (size_t)sizeof(recMessage)); //Distructive read of message
-    Serial.println("Topic: " + topic + " Msg: " + recMessage);
-    readingMessageReceived = false;               // To check if non reading message
-    for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
-      if (topic == readings[i].topic) {
-        index = i;
-        if (readings[i].dataType == DATA_TEMPERATURE) {
-          update_temperature(recMessage, index);
-        }
-        if (readings[i].dataType == DATA_HUMIDITY) {
-          //update_temperature(recMessage, index);
-        }
-      }
-    }
-    for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
-      if (topic == settings[i].topic) {
-        index = i;
-        if (settings[i].dataType == DATA_ONOFF) {
-          update_on_off(topic, recMessage, index);
-        }
-      }
+  while (true) {
+    delay(10);
+    if (!mqttClient.connected()) {
+      Serial.println("MQTT error detected");
+      mqtt_connect();
     }
 
+    messageSize = mqttClient.parseMessage();
+    if (messageSize) {   //Message received
+      topic = String(mqttClient.messageTopic());
+      mqttClient.read((unsigned char*)recMessage, (size_t)sizeof(recMessage)); //Distructive read of message
+      recMessage[messageSize]=0;
+      Serial.println("Topic: " + topic + " Msg: " + recMessage);
+      readingMessageReceived = false;               // To check if non reading message
+      for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
+        if (topic == readings[i].topic) {
+          index = i;
+          if (readings[i].dataType == DATA_TEMPERATURE) {
+            update_temperature(recMessage, index);
+          }
+          if (readings[i].dataType == DATA_HUMIDITY) {
+            //update_temperature(recMessage, index);
+          }
+        }
+      }
+      for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
+        if (topic == settings[i].topic) {
+          index = i;
+          if (settings[i].dataType == DATA_ONOFF) {
+            update_on_off(topic, recMessage, index);
+          }
+        }
+      }
+
+    }
   }
 }
 
 void loop() {
+
+  delay(500);
   timeClient.update();
 
   for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
@@ -540,7 +572,7 @@ void loop() {
   }
 
   // Temp code to swtich display
-  if ((int)round(second() / 5) % 2 == 0) {
+  if ((int)round(second() / 5) % 2 == 0 || touch_light) {
     lcd_update_temp();
   }
   else
@@ -551,10 +583,4 @@ void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     network_connect();
   }
-  if (!mqttClient.connected()) {
-    Serial.println("MQTT error detected");
-    mqtt_connect();
-  }
-  receive_mqtt_messages();
-
 }

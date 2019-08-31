@@ -120,12 +120,10 @@ void setup() {
   time_init();
   mqtt_connect();
   lcd_update_temp;
- 
 
   xTaskCreatePinnedToCore( get_weather_t, "Get Weather", 8192 , NULL, 3, NULL, 0 );
   xTaskCreatePinnedToCore( touch_check_t, "Touch", 8192 , NULL, 4, NULL, 0 );
   xTaskCreatePinnedToCore( receive_mqtt_messages_t, "mqtt", 8192 , NULL, 1, NULL, 1 );
-
 }
 
 void welcome_message() {
@@ -186,7 +184,7 @@ void touch_check_t(void * pvParameters) {
       if (touch_light_pressed + TOUCH_LIGHT_DELAY < now()) {
         touch_light = false;
       }
-    }  
+    }
   }
 }
 
@@ -230,13 +228,12 @@ void get_weather_t(void * pvParameters ) {
         weather.overal = weatherOveral;
         weather.description = weatherDescription;
         weather.updateTime = now();
-
         Serial.println("Weather Updated");
       }
       wifiClientWeather.flush();
       wifiClientWeather.stop();
     }
-    
+
   }
 }
 
@@ -247,10 +244,8 @@ void network_connect() {
 
   Serial.print("Connect to WPA SSID: ");
   Serial.println(WIFI_SSID);
-
   String("Waiting for").toCharArray(lcdOutput.line1, LCD_COL);
   String(WIFI_SSID).toCharArray(lcdOutput.line2, LCD_COL);
-
 
   while (WiFi.begin(WIFI_SSID, WIFI_PASSWORD) != WL_CONNECTED) {
     Serial.print(".");
@@ -279,7 +274,6 @@ void time_init() {
   setTime(timeClient.getEpochTime());
   Serial.println("Epoch time is: " + String(timeClient.getEpochTime()));
   Serial.println("Time is: " + String(timeClient.getFormattedTime()));
-
 }
 
 void mqtt_connect() {
@@ -288,11 +282,8 @@ void mqtt_connect() {
   Serial.println();
   Serial.print("Attempting to connect to the MQTT broker: ");
   Serial.println(MQTT_SERVER);
-
-
   String("Connecting to: ").toCharArray(lcdOutput.line1, LCD_COL);
   String(MQTT_SERVER).toCharArray(lcdOutput.line2, LCD_COL);
-
 
   while (!mqttClient.connect(MQTT_SERVER, MQTT_PORT)) {
     Serial.print("MQTT connection failed");
@@ -307,14 +298,11 @@ void mqtt_connect() {
     mqttClient.subscribe(readings[i].topic);
     readings[i].lastMessageTime = millis();
   }
-
   for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
     mqttClient.subscribe(settings[i].topic);
   }
-
   String("Connected to:  ").toCharArray(lcdOutput.line1, LCD_COL);
   delay(1000);  // For the message on the LCD to be read
-
 }
 
 
@@ -324,7 +312,6 @@ void lcd_update_temp() {
   String line2;
 
   line1 = String(readings[0].description) + ":" + String(readings[0].output) + "  " + String(readings[1].description) + ":" + String(readings[1].output)  + "  ";
-
   line2 = String(readings[2].description) + ":" + String(readings[2].output) +  + "  " + String(readings[3].description) + ":" + String(readings[3].output) +  + "  ";
 
   while (line1.length() <= LCD_COL) {
@@ -343,7 +330,6 @@ void lcd_update_temp() {
   lcdOutput.line2[7] = (char)readings[2].enoughData;
   lcdOutput.line2[14] = (char)readings[3].changeChar;
   lcdOutput.line2[15] = (char)readings[3].enoughData;
-
 }
 
 void lcd_update_weather() {
@@ -362,7 +348,6 @@ void lcd_update_weather() {
     firstLetter.toUpperCase();
     line2 = firstLetter + weather.description.substring(1);
   }
-
   while (line1.length() <= LCD_COL + 1) {
     line1 = line1 + " ";
   }
@@ -371,7 +356,6 @@ void lcd_update_weather() {
   }
   line1.toCharArray(lcdOutput.line1, LCD_COL + 1);
   line2.toCharArray(lcdOutput.line2, LCD_COL + 1);
-
 }
 
 void lcd_output_t(void * pvParameters ) {
@@ -379,7 +363,6 @@ void lcd_output_t(void * pvParameters ) {
   int line2Counter = 0;
 
   LiquidCrystal_I2C lcd(0x27, LCD_COL, LCD_ROW);
-  //Sets up the special charaters in the LCD
   byte charUp[8] = {B00100, B01110, B10101, B00100, B00100, B00100, B00100, B00000};
   byte charDown[8] = {B00000, B00100, B00100, B00100, B00100, B10101, B01110, B00100};
   byte charSame[8] = {B00000, B00100, B00010, B11111, B00010, B00100, B00000, B00000};
@@ -392,7 +375,6 @@ void lcd_output_t(void * pvParameters ) {
   String("                 ").toCharArray(lcdOutput.line1, LCD_COL + 1);
   String("                 ").toCharArray(lcdOutput.line2, LCD_COL + 1);
   lcdValues.on = true;
-
 
   while (true) {
     delay(10);
@@ -422,7 +404,6 @@ void lcd_output_t(void * pvParameters ) {
         lcd.write(lcdOutput.line2[i]);
       }
     }
-
   }
 }
 
@@ -496,7 +477,6 @@ void update_mqtt_settings() {
   }
 }
 
-
 void update_on_off(String topic, String recMessage, int index) {
 
   settings[index].currentValue = String(recMessage).toFloat();
@@ -529,7 +509,7 @@ void receive_mqtt_messages_t(void * pvParams) {
     if (messageSize) {   //Message received
       topic = String(mqttClient.messageTopic());
       mqttClient.read((unsigned char*)recMessage, (size_t)sizeof(recMessage)); //Distructive read of message
-      recMessage[messageSize]=0;
+      recMessage[messageSize] = 0;
       Serial.println("Topic: " + topic + " Msg: " + recMessage);
       readingMessageReceived = false;               // To check if non reading message
       for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
@@ -551,7 +531,6 @@ void receive_mqtt_messages_t(void * pvParams) {
           }
         }
       }
-
     }
   }
 }
@@ -566,8 +545,6 @@ void loop() {
       readings[i].changeChar = CHAR_NO_MESSAGE;
     }
   }
-
-  // Temp code to swtich display
   if ((int)round(second() / 5) % 2 == 0 || touch_light) {
     lcd_update_temp();
   }

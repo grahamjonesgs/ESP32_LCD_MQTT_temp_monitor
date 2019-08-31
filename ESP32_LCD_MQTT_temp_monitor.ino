@@ -87,11 +87,20 @@ struct LcdOutput {
 #define TIME_OFFSET 7200                 // Local time offset from UTC
 #define WEATHER_UPDATE_INTERVAL 60       // Interval between weather updates
 
+// Global Variables
 Readings readings[] { READINGS_ARRAY };
 Settings settings[] {SETTINGS_ARRAY };
 LcdValues lcdValues;
 Weather weather = {0.0, 0, 0.0, "", "", 0};
 LcdOutput lcdOutput = {{CHAR_BLANK}, {CHAR_BLANK}, true};
+bool touch_light = false;
+WiFiClientSecure wifiClient;
+WiFiClientSecure wifiClientWeather;
+MqttClient mqttClient(wifiClient);
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, TIME_OFFSET);
+
+// Define eprom address
 #define LCD_VALUES_ADDRESS 0
 
 // for touch
@@ -99,25 +108,6 @@ LcdOutput lcdOutput = {{CHAR_BLANK}, {CHAR_BLANK}, true};
 #define SENSITIVITY 4  // lower more sensitive
 #define TOUCH_LOOPS_NEEDED 3  // number of touched loops to turn on 
 #define TOUCH_LIGHT_DELAY 10L
-int touch_array[TOUCH_ARRAY_SIZE];
-int touch_counter = 0;
-bool touch_looped = false;
-bool touch_light = false;
-long touch_light_pressed = 0;
-
-WiFiClientSecure wifiClient;
-WiFiClientSecure wifiClientWeather;
-MqttClient mqttClient(wifiClient);
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, TIME_OFFSET);
-
-LiquidCrystal_I2C lcd(0x27, LCD_COL, LCD_ROW);
-
-// Weather set up
-String apiKey = OPEN_WEATHER_API_KEY;
-char weather_server[] = WEATHER_SERVER;
-String location = LOCATION;
-
 
 void setup() {
 
@@ -152,6 +142,10 @@ void touch_check_t(void * pvParameters) {
   float touch_average;
   int touch_sensor_value = 0;
   int loops_touched = 0;
+  int touch_array[TOUCH_ARRAY_SIZE];
+  int touch_counter = 0;
+  bool touch_looped = false;
+  long touch_light_pressed = 0;
 
   while (true) {
     delay(100);
@@ -199,6 +193,10 @@ void touch_check_t(void * pvParameters) {
 }
 
 void get_weather_t(void * pvParameters ) {
+
+  String apiKey = OPEN_WEATHER_API_KEY;
+  char weather_server[] = WEATHER_SERVER;
+  String location = LOCATION;
 
   while (true) {
     delay(2000);
@@ -382,7 +380,7 @@ void lcd_output_t(void * pvParameters ) {
   int line1Counter = 0;
   int line2Counter = 0;
 
-
+  LiquidCrystal_I2C lcd(0x27, LCD_COL, LCD_ROW);
   //Sets up the special charaters in the LCD
   byte charUp[8] = {B00100, B01110, B10101, B00100, B00100, B00100, B00100, B00000};
   byte charDown[8] = {B00000, B00100, B00100, B00100, B00100, B10101, B01110, B00100};

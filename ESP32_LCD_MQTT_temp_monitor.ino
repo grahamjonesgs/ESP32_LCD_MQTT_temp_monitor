@@ -113,14 +113,14 @@ void setup() {
 
   Serial.begin(115200);  // Default speed of esp32
   EEPROM.get(LCD_VALUES_ADDRESS, lcdValues);
-  xTaskCreatePinnedToCore( lcd_output_t, "LCD Update", 8192 , NULL, 2, NULL, 1 ); // After this no other calls to lcd.xxxxx
+  xTaskCreatePinnedToCore( lcd_output_t, "LCD Update", 8192 , NULL, 2, NULL, 1 ); // Highest priorit on this cpu to avoid coms errors
   delay(3000);
   welcome_message();
   network_connect();
   time_init();
   mqtt_connect();
   lcd_update_temp;
-  //update_mqtt_settings();
+ 
 
   xTaskCreatePinnedToCore( get_weather_t, "Get Weather", 8192 , NULL, 3, NULL, 0 );
   xTaskCreatePinnedToCore( touch_check_t, "Touch", 8192 , NULL, 4, NULL, 0 );
@@ -186,9 +186,7 @@ void touch_check_t(void * pvParameters) {
       if (touch_light_pressed + TOUCH_LIGHT_DELAY < now()) {
         touch_light = false;
       }
-    }
-
-    
+    }  
   }
 }
 

@@ -19,9 +19,11 @@
 #include <ArduinoJson.h>
 #include "network_config.h"
 
+#define CHAR_LEN 255
+
 struct Readings {                     // Array to hold the incoming measurement
-  String description;                 // Currently set to 3 chars long
-  String topic;                       // MQTT topic
+  const char description[CHAR_LEN];   // Currently set to 3 chars long
+  const char topic[CHAR_LEN];         // MQTT topic
   String output;                      // To be output to screen - expected to be 2 chars long
   float currentValue;                 // Current value received
   float lastValue[STORED_READING];    // Defined that the zeroth element is the oldest
@@ -33,9 +35,9 @@ struct Readings {                     // Array to hold the incoming measurement
 };
 
 struct Settings {                     // Structure to hold the cincomming settings and outgoing confirmations
-  String description;                 // Currently set to 3 chars long
-  String topic;                       // MQTT topic
-  String confirmTopic;                // To confirm setting changes back to broker
+  const char description[CHAR_LEN];   // Currently set to 3 chars long
+  const char topic[CHAR_LEN];         // MQTT topic
+  const char confirmTopic[CHAR_LEN];      // To confirm setting changes back to broker
   float currentValue;                 // Current value received
   int dataType;                       // Type of data received
 };
@@ -48,14 +50,14 @@ struct Weather {
   float temperature;
   int pressure;
   float humidity;
-  String overal;
-  String description;
+  char overal[CHAR_LEN];
+  char description[CHAR_LEN];
   time_t updateTime;
 };
 
 struct LcdOutput {
-  char line1[255];
-  char line2[255];
+  char line1[CHAR_LEN];
+  char line2[CHAR_LEN];
   bool update;
 };
 
@@ -113,7 +115,7 @@ void setup() {
 
   Serial.begin(115200);  // Default speed of esp32
   EEPROM.get(LCD_VALUES_ADDRESS, lcdValues);
-  xTaskCreatePinnedToCore( lcd_output_t, "LCD Update", 8192 , NULL, 2, NULL, 1 ); // Highest priorit on this cpu to avoid coms errors
+  xTaskCreatePinnedToCore( lcd_output_t, "LCD Update", 8192 , NULL, 0, NULL, 1 ); // Highest priorit on this cpu to avoid coms errors
   delay(3000);
   welcome_message();
   network_connect();
@@ -128,8 +130,8 @@ void setup() {
 
 void welcome_message() {
 
-  String("Welcome to the").toCharArray(lcdOutput.line1, LCD_COL);
-  String("Klauss-o-meter").toCharArray(lcdOutput.line2, LCD_COL);
+  strncpy(lcdOutput.line1, "Welcome to the", LCD_COL);
+  strncpy(lcdOutput.line2, "Klauss-o-meter", LCD_COL);
 
   delay(3000);
 }
@@ -144,9 +146,27 @@ void touch_check_t(void * pvParameters) {
   int touch_counter = 0;
   bool touch_looped = false;
   long touch_light_pressed = 0;
+  size_t old_free = 0;
+  size_t old_biggest = 0;
+  size_t new_free = 0;
+  size_t new_biggest = 0;
 
   while (true) {
-    delay(100);
+
+    new_free = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    new_biggest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+
+    if (old_biggest != new_biggest /*|| old_free != new_free*/) {
+      old_biggest = new_biggest;
+      //old_free = new_free;
+
+      Serial.print(F("Heap data: "));
+      Serial.print(new_free);
+      Serial.print(F(" largest free block "));
+      Serial.println(new_biggest);
+    }
+
+    delay(1000);
     touch_sensor_value = touchRead(T0);
     touch_array[touch_counter] = touch_sensor_value;
     touch_counter++;
@@ -190,43 +210,45 @@ void touch_check_t(void * pvParameters) {
 
 void get_weather_t(void * pvParameters ) {
 
-  String apiKey = OPEN_WEATHER_API_KEY;
-  char weather_server[] = WEATHER_SERVER;
-  String location = LOCATION;
+  const char apiKey[] = OPEN_WEATHER_API_KEY;
+  const char weather_server[] = WEATHER_SERVER;
+  const char location[] = LOCATION;
 
   while (true) {
     delay(2000);
     if (now() - weather.updateTime > WEATHER_UPDATE_INTERVAL) {
       if (wifiClientWeather.connect(weather_server, 443)) {
-        wifiClientWeather.print("GET /data/2.5/weather?");
-        wifiClientWeather.print("q=" + location);
-        wifiClientWeather.print("&appid=" + apiKey);
-        wifiClientWeather.print("&cnt=3");
-        wifiClientWeather.println("&units=metric");
-        wifiClientWeather.println("Host: api.openweathermap.org");
-        wifiClientWeather.println("Connection: close");
+        wifiClientWeather.print(F("GET /data/2.5/weather?"));
+        wifiClientWeather.print(F("q="));
+        wifiClientWeather.print(location);
+        wifiClientWeather.print(F("&appid="));
+        wifiClientWeather.print(apiKey);
+        wifiClientWeather.print(F("&cnt=3"));
+        wifiClientWeather.println(F("&units=metric"));
+        wifiClientWeather.println(F("Host: api.openweathermap.org"));
+        wifiClientWeather.println(F("Connection: close"));
         wifiClientWeather.println();
       } else {
-        Serial.println("unable to connect to weather server");
+        Serial.println(F("unable to connect to weather server"));
       }
       delay(2000);
       String line = "";
 
       line = wifiClientWeather.readStringUntil('\n');
       if (line.length() != 0) {
-        DynamicJsonDocument root(5000);
+        DynamicJsonDocument root(1000);
         auto deseraliseError = deserializeJson(root, line);
-        String weatherTemperature = root["main"]["temp"];
-        String weatherPressure = root["main"]["pressure"];
-        String weatherHumidity = root["main"]["humidity"];
-        String weatherOveral = root["weather"][0]["main"];
-        String weatherDescription = root["weather"][0]["description"];
+        float weatherTemperature = root["main"]["temp"];
+        int weatherPressure = root["main"]["pressure"];
+        int weatherHumidity = root["main"]["humidity"];
+        const char* weatherOveral = root["weather"][0]["main"];
+        const char* weatherDescription = root["weather"][0]["description"];
 
-        weather.temperature = weatherTemperature.toFloat();
-        weather.pressure = weatherPressure.toInt();
-        weather.humidity = weatherHumidity.toInt();
-        weather.overal = weatherOveral;
-        weather.description = weatherDescription;
+        weather.temperature = weatherTemperature;
+        weather.pressure = weatherPressure;
+        weather.humidity = weatherHumidity;
+        strncpy(weather.description, weatherDescription, CHAR_LEN);
+        strncpy(weather.overal, weatherOveral, CHAR_LEN);
         weather.updateTime = now();
         Serial.println("Weather Updated");
       }
@@ -239,17 +261,18 @@ void get_weather_t(void * pvParameters ) {
 
 void network_connect() {
 
-  String lcdWait[9] = {".    ", " .   ", "  .  ", "   . ", "    .", "   . ", "  .  ", " .   "};
+  const char lcdWait[8][6] = {".    ", " .   ", "  .  ", "   . ", "    .", "   . ", "  .  ", " .   "};
   int lcdWaitCount = 0;
 
   Serial.print("Connect to WPA SSID: ");
   Serial.println(WIFI_SSID);
-  String("Waiting for").toCharArray(lcdOutput.line1, LCD_COL);
-  String(WIFI_SSID).toCharArray(lcdOutput.line2, LCD_COL);
+  strncpy(lcdOutput.line1, "Waiting for", LCD_COL);
+  strncpy(lcdOutput.line2, WIFI_SSID, LCD_COL);
 
   while (WiFi.begin(WIFI_SSID, WIFI_PASSWORD) != WL_CONNECTED) {
     Serial.print(".");
-    String("Waiting for" + lcdWait[lcdWaitCount]).toCharArray(lcdOutput.line1, LCD_COL);
+    strncpy(lcdOutput.line1, "Waiting for", LCD_COL);
+    strncat(lcdOutput.line1, lcdWait[lcdWaitCount], 5);
 
     lcdWaitCount++;
     if (lcdWaitCount > (sizeof(lcdWait) / sizeof(lcdWait[0])) - 1) {
@@ -257,8 +280,7 @@ void network_connect() {
     }
     delay(500);
   }
-  String("Connected to:   ").toCharArray(lcdOutput.line1, LCD_COL);
-
+  strncpy(lcdOutput.line1, "Connected to:   ", LCD_COL);
 }
 
 void time_init() {
@@ -272,8 +294,12 @@ void time_init() {
     timeClient.begin();
   }
   setTime(timeClient.getEpochTime());
-  Serial.println("Epoch time is: " + String(timeClient.getEpochTime()));
-  Serial.println("Time is: " + String(timeClient.getFormattedTime()));
+
+
+  Serial.println(F("Epoch time is: "));
+  Serial.println(timeClient.getEpochTime());
+  Serial.print(F("Time is: "));
+  Serial.println(timeClient.getFormattedTime());
 }
 
 void mqtt_connect() {
@@ -282,12 +308,13 @@ void mqtt_connect() {
   Serial.println();
   Serial.print("Attempting to connect to the MQTT broker: ");
   Serial.println(MQTT_SERVER);
-  String("Connecting to: ").toCharArray(lcdOutput.line1, LCD_COL);
-  String(MQTT_SERVER).toCharArray(lcdOutput.line2, LCD_COL);
+  
+  strncpy(lcdOutput.line1,"Connecting to: ", LCD_COL);
+  strncpy(lcdOutput.line2,MQTT_SERVER, LCD_COL);
 
   while (!mqttClient.connect(MQTT_SERVER, MQTT_PORT)) {
     Serial.print("MQTT connection failed");
-    String("Can't connect:").toCharArray(lcdOutput.line1, LCD_COL);
+    strncpy(lcdOutput.line2, "Can't connect:", LCD_COL);
     delay(5000);
     ESP.restart();
   }
@@ -301,7 +328,7 @@ void mqtt_connect() {
   for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
     mqttClient.subscribe(settings[i].topic);
   }
-  String("Connected to:  ").toCharArray(lcdOutput.line1, LCD_COL);
+  //strncpy(lcdOutput.line1, "Connected to:  ", LCD_COL);
   delay(1000);  // For the message on the LCD to be read
 }
 
@@ -344,9 +371,9 @@ void lcd_update_weather() {
   else {
 
     line1 = "T:" + String(weather.temperature, 1) + " H:" + String(weather.humidity, 0);
-    String firstLetter = weather.description.substring(0, 1);
-    firstLetter.toUpperCase();
-    line2 = firstLetter + weather.description.substring(1);
+    //String firstLetter = weather.description.substring(0, 1);
+    //firstLetter.toUpperCase();
+    line2 = String(weather.description);
   }
   while (line1.length() <= LCD_COL + 1) {
     line1 = line1 + " ";
@@ -372,17 +399,19 @@ void lcd_output_t(void * pvParameters ) {
   lcd.createChar(CHAR_DOWN, charDown);
   lcd.createChar(CHAR_SAME, charSame);
   lcd.backlight();
-  String("                 ").toCharArray(lcdOutput.line1, LCD_COL + 1);
-  String("                 ").toCharArray(lcdOutput.line2, LCD_COL + 1);
+  strncpy(lcdOutput.line1, "                 ",LCD_COL);
+  strncpy(lcdOutput.line1, "                 ",LCD_COL);
   lcdValues.on = true;
 
   while (true) {
     delay(10);
     if (lcdValues.on || touch_light) {
       lcd.backlight();
+      //lcd.init();
     }
     else {
       lcd.noBacklight();
+      lcd.init();
     }
     lcd.setCursor(0, 0);
     for (int i = 0; i <= LCD_COL; i++) {
@@ -465,9 +494,6 @@ void update_temperature(String recMessage, int index) {
 
 void update_mqtt_settings() {
 
-  String topic;
-  String message;
-
   for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
     if (settings[i].description == DESC_ONOFF) {
       mqttClient.beginMessage(settings[i].confirmTopic);
@@ -494,7 +520,7 @@ void update_on_off(String topic, String recMessage, int index) {
 void receive_mqtt_messages_t(void * pvParams) {
   int messageSize = 0;
   String topic;
-  char recMessage[255] = {0};
+  char recMessage[CHAR_LEN] = {0};
   int index;
   bool readingMessageReceived;
 

@@ -24,7 +24,7 @@
 struct Readings {                     // Array to hold the incoming measurement
   const char description[CHAR_LEN];   // Currently set to 3 chars long
   const char topic[CHAR_LEN];         // MQTT topic
-  String output;                      // To be output to screen - expected to be 2 chars long
+  char output[CHAR_LEN];                      // To be output to screen - expected to be 2 chars long
   float currentValue;                 // Current value received
   float lastValue[STORED_READING];    // Defined that the zeroth element is the oldest
   byte changeChar;                    // To indicate change in status
@@ -97,7 +97,7 @@ Weather weather = {0.0, 0, 0.0, "", "", 0};
 LcdOutput lcdOutput = {{CHAR_BLANK}, {CHAR_BLANK}, true};
 bool touch_light = false;
 WiFiClientSecure wifiClient;
-WiFiClientSecure wifiClientWeather;
+WiFiClient wifiClientWeather;
 MqttClient mqttClient(wifiClient);
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, TIME_OFFSET);
@@ -217,7 +217,7 @@ void get_weather_t(void * pvParameters ) {
   while (true) {
     delay(2000);
     if (now() - weather.updateTime > WEATHER_UPDATE_INTERVAL) {
-      if (wifiClientWeather.connect(weather_server, 443)) {
+      if (wifiClientWeather.connect(weather_server, 80)) {
         wifiClientWeather.print(F("GET /data/2.5/weather?"));
         wifiClientWeather.print(F("q="));
         wifiClientWeather.print(location);
@@ -308,9 +308,9 @@ void mqtt_connect() {
   Serial.println();
   Serial.print("Attempting to connect to the MQTT broker: ");
   Serial.println(MQTT_SERVER);
-  
-  strncpy(lcdOutput.line1,"Connecting to: ", LCD_COL);
-  strncpy(lcdOutput.line2,MQTT_SERVER, LCD_COL);
+
+  strncpy(lcdOutput.line1, "Connecting to: ", LCD_COL);
+  strncpy(lcdOutput.line2, MQTT_SERVER, LCD_COL);
 
   while (!mqttClient.connect(MQTT_SERVER, MQTT_PORT)) {
     Serial.print("MQTT connection failed");
@@ -335,20 +335,24 @@ void mqtt_connect() {
 
 void lcd_update_temp() {
 
-  String line1;
-  String line2;
+  strncpy(lcdOutput.line1, readings[0].description , LCD_COL);
+  strncat(lcdOutput.line1, ":" , LCD_COL);
+  strncat(lcdOutput.line1, readings[0].output , LCD_COL);
+  strncat(lcdOutput.line1, "  " , LCD_COL);
+  strncat(lcdOutput.line1, readings[1].description , LCD_COL);
+  strncat(lcdOutput.line1, ":" , LCD_COL);
+  strncat(lcdOutput.line1, readings[1].output , LCD_COL);
+  strncat(lcdOutput.line1, "  " , LCD_COL);
 
-  line1 = String(readings[0].description) + ":" + String(readings[0].output) + "  " + String(readings[1].description) + ":" + String(readings[1].output)  + "  ";
-  line2 = String(readings[2].description) + ":" + String(readings[2].output) +  + "  " + String(readings[3].description) + ":" + String(readings[3].output) +  + "  ";
+  strncpy(lcdOutput.line2, readings[2].description , LCD_COL);
+  strncat(lcdOutput.line2, ":" , LCD_COL);
+  strncat(lcdOutput.line2, readings[2].output , LCD_COL);
+  strncat(lcdOutput.line2, "  " , LCD_COL);
+  strncat(lcdOutput.line2, readings[3].description , LCD_COL);
+  strncat(lcdOutput.line2, ":" , LCD_COL);
+  strncat(lcdOutput.line2, readings[3].output , LCD_COL);
+  strncat(lcdOutput.line2, "  " , LCD_COL);
 
-  while (line1.length() <= LCD_COL) {
-    line1 = line1 + " ";
-  }
-  while (line2.length() <= LCD_COL) {
-    line2 = line2 + " ";
-  }
-  line1.toCharArray(lcdOutput.line1, LCD_COL);
-  line2.toCharArray(lcdOutput.line2, LCD_COL);
   lcdOutput.line1[6] = (char)readings[0].changeChar;
   lcdOutput.line1[7] = (char)readings[0].enoughData;
   lcdOutput.line1[14] = (char)readings[1].changeChar;
@@ -361,28 +365,23 @@ void lcd_update_temp() {
 
 void lcd_update_weather() {
 
-  String line1;
-  String line2;
-
   if (weather.updateTime == 0) {
-    line1 = "Waiting for       ";
-    line2 = "weather....       ";
+    strncpy(lcdOutput.line1, "Waiting for       " , LCD_COL);
+    strncpy(lcdOutput.line2, "weather....       " , LCD_COL);
   }
-  else {
+  else
+  {
+    sprintf(lcdOutput.line1, "T:%2.1f H:%2.0f" , weather.temperature, weather.humidity );
+    strncpy(lcdOutput.line2, weather.description , LCD_COL);
 
-    line1 = "T:" + String(weather.temperature, 1) + " H:" + String(weather.humidity, 0);
-    //String firstLetter = weather.description.substring(0, 1);
-    //firstLetter.toUpperCase();
-    line2 = String(weather.description);
   }
-  while (line1.length() <= LCD_COL + 1) {
-    line1 = line1 + " ";
+  while (strlen(lcdOutput.line1) <= LCD_COL) {
+    strcat(lcdOutput.line1, " ");
   }
-  while (line2.length() <= LCD_COL + 1) {
-    line2 = line2 + " ";
+  while (strlen(lcdOutput.line2) <= LCD_COL) {
+    strcat(lcdOutput.line2, " ");
   }
-  line1.toCharArray(lcdOutput.line1, LCD_COL + 1);
-  line2.toCharArray(lcdOutput.line2, LCD_COL + 1);
+
 }
 
 void lcd_output_t(void * pvParameters ) {
@@ -399,8 +398,8 @@ void lcd_output_t(void * pvParameters ) {
   lcd.createChar(CHAR_DOWN, charDown);
   lcd.createChar(CHAR_SAME, charSame);
   lcd.backlight();
-  strncpy(lcdOutput.line1, "                 ",LCD_COL);
-  strncpy(lcdOutput.line1, "                 ",LCD_COL);
+  strncpy(lcdOutput.line1, "                 ", LCD_COL);
+  strncpy(lcdOutput.line1, "                 ", LCD_COL);
   lcdValues.on = true;
 
   while (true) {
@@ -436,15 +435,16 @@ void lcd_output_t(void * pvParameters ) {
   }
 }
 
-void update_temperature(String recMessage, int index) {
+void update_temperature(char* recMessage, int index) {
 
   float averageHistory;
   float totalHistory = 0.0;
 
-  readings[index].currentValue = String(recMessage).toFloat();
-  readings[index].output = String((int)round(readings[index].currentValue));
+  readings[index].currentValue=atof(recMessage);
+  sprintf(readings[index].output, "%2.0f", readings[index].currentValue);
+              
   if (readings[index].readingIndex == 0) {
-    readings[index].changeChar = CHAR_BLANK;  // First reading of this boot
+  readings[index].changeChar = CHAR_BLANK;  // First reading of this boot
     readings[index].lastValue[0] = readings[index].currentValue;
   }
   else
@@ -480,16 +480,16 @@ void update_temperature(String recMessage, int index) {
 
   readings[index].readingIndex++;
   readings[index].lastMessageTime = millis();
-  // Force output length to be 2 chars by right padding
-  if (readings[index].output.length() > 2) {
-    readings[index].output[2] = 0;   //Truncate long message
-  }
-  if (readings[index].output.length() == 1) {
-    readings[index].output = readings[index].output + " ";
-  }
-  if (readings[index].output.length() == 0) {
-    readings[index].output = "  ";
-  }
+                                    // Force output length to be 2 chars by right padding
+                                    /*if (readings[index].output.length() > 2) {
+                                      readings[index].output[2] = 0;   //Truncate long message
+                                      }
+                                      if (readings[index].output.length() == 1) {
+                                      readings[index].output = readings[index].output + " ";
+                                      }
+                                      if (readings[index].output.length() == 0) {
+                                      readings[index].output = "  ";
+                                      }*/
 }
 
 void update_mqtt_settings() {
@@ -497,20 +497,22 @@ void update_mqtt_settings() {
   for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
     if (settings[i].description == DESC_ONOFF) {
       mqttClient.beginMessage(settings[i].confirmTopic);
-      mqttClient.print(String(lcdValues.on));
+      
+      mqttClient.print(lcdValues.on);
       mqttClient.endMessage();
     }
   }
 }
 
-void update_on_off(String topic, String recMessage, int index) {
+void update_on_off(char* recMessage, int index) {
 
-  settings[index].currentValue = String(recMessage).toFloat();
-  if (recMessage == "1") {
+  if (strcmp(recMessage,"1")==0) {
     lcdValues.on = true;
+    settings[index].currentValue = 1;
   }
-  if (recMessage == "0") {
+  if (strcmp(recMessage,"1")==0) {
     lcdValues.on = false;
+    settings[index].currentValue = 0;
   }
   update_mqtt_settings();
   // Store for reboot
@@ -533,13 +535,13 @@ void receive_mqtt_messages_t(void * pvParams) {
 
     messageSize = mqttClient.parseMessage();
     if (messageSize) {   //Message received
-      topic = String(mqttClient.messageTopic());
+      topic=mqttClient.messageTopic();
       mqttClient.read((unsigned char*)recMessage, (size_t)sizeof(recMessage)); //Distructive read of message
       recMessage[messageSize] = 0;
-      Serial.println("Topic: " + topic + " Msg: " + recMessage);
+      Serial.println("Topic: " + String(topic) + " Msg: " + recMessage);
       readingMessageReceived = false;               // To check if non reading message
       for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
-        if (topic == readings[i].topic) {
+        if (topic==readings[i].topic) {
           index = i;
           if (readings[i].dataType == DATA_TEMPERATURE) {
             update_temperature(recMessage, index);
@@ -550,10 +552,10 @@ void receive_mqtt_messages_t(void * pvParams) {
         }
       }
       for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
-        if (topic == settings[i].topic) {
+        if (topic== readings[i].topic) {
           index = i;
           if (settings[i].dataType == DATA_ONOFF) {
-            update_on_off(topic, recMessage, index);
+            update_on_off(recMessage, index);
           }
         }
       }

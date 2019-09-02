@@ -111,10 +111,13 @@ NTPClient timeClient(ntpUDP, TIME_OFFSET);
 #define TOUCH_LOOPS_NEEDED 3  // number of touched loops to turn on 
 #define TOUCH_LIGHT_DELAY 10L
 
+// Monitor Heap size for fragmentation
+size_t old_biggest_free_block = 0;
+
 void setup() {
 
   Serial.begin(115200);  // Default speed of esp32
-  EEPROM.get(LCD_VALUES_ADDRESS, lcdValues);
+  //EEPROM.get(LCD_VALUES_ADDRESS, lcdValues);
   xTaskCreatePinnedToCore( lcd_output_t, "LCD Update", 8192 , NULL, 0, NULL, 1 ); // Highest priorit on this cpu to avoid coms errors
   delay(3000);
   welcome_message();
@@ -146,25 +149,8 @@ void touch_check_t(void * pvParameters) {
   int touch_counter = 0;
   bool touch_looped = false;
   long touch_light_pressed = 0;
-  size_t old_free = 0;
-  size_t old_biggest = 0;
-  size_t new_free = 0;
-  size_t new_biggest = 0;
 
   while (true) {
-
-    new_free = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    new_biggest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-
-    if (old_biggest != new_biggest /*|| old_free != new_free*/) {
-      old_biggest = new_biggest;
-      //old_free = new_free;
-
-      Serial.print(F("Heap data: "));
-      Serial.print(new_free);
-      Serial.print(F(" largest free block "));
-      Serial.println(new_biggest);
-    }
 
     delay(1000);
     touch_sensor_value = touchRead(T0);
@@ -440,11 +426,11 @@ void update_temperature(char* recMessage, int index) {
   float averageHistory;
   float totalHistory = 0.0;
 
-  readings[index].currentValue=atof(recMessage);
+  readings[index].currentValue = atof(recMessage);
   sprintf(readings[index].output, "%2.0f", readings[index].currentValue);
-              
+
   if (readings[index].readingIndex == 0) {
-  readings[index].changeChar = CHAR_BLANK;  // First reading of this boot
+    readings[index].changeChar = CHAR_BLANK;  // First reading of this boot
     readings[index].lastValue[0] = readings[index].currentValue;
   }
   else
@@ -480,16 +466,16 @@ void update_temperature(char* recMessage, int index) {
 
   readings[index].readingIndex++;
   readings[index].lastMessageTime = millis();
-                                    // Force output length to be 2 chars by right padding
-                                    /*if (readings[index].output.length() > 2) {
-                                      readings[index].output[2] = 0;   //Truncate long message
-                                      }
-                                      if (readings[index].output.length() == 1) {
-                                      readings[index].output = readings[index].output + " ";
-                                      }
-                                      if (readings[index].output.length() == 0) {
-                                      readings[index].output = "  ";
-                                      }*/
+  // Force output length to be 2 chars by right padding
+  /*if (readings[index].output.length() > 2) {
+    readings[index].output[2] = 0;   //Truncate long message
+    }
+    if (readings[index].output.length() == 1) {
+    readings[index].output = readings[index].output + " ";
+    }
+    if (readings[index].output.length() == 0) {
+    readings[index].output = "  ";
+    }*/
 }
 
 void update_mqtt_settings() {
@@ -497,7 +483,7 @@ void update_mqtt_settings() {
   for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
     if (settings[i].description == DESC_ONOFF) {
       mqttClient.beginMessage(settings[i].confirmTopic);
-      
+
       mqttClient.print(lcdValues.on);
       mqttClient.endMessage();
     }
@@ -506,17 +492,17 @@ void update_mqtt_settings() {
 
 void update_on_off(char* recMessage, int index) {
 
-  if (strcmp(recMessage,"1")==0) {
+  if (strcmp(recMessage, "1") == 0) {
     lcdValues.on = true;
     settings[index].currentValue = 1;
   }
-  if (strcmp(recMessage,"1")==0) {
+  if (strcmp(recMessage, "0") == 0) {
     lcdValues.on = false;
     settings[index].currentValue = 0;
   }
   update_mqtt_settings();
   // Store for reboot
-  EEPROM.put(LCD_VALUES_ADDRESS, lcdValues);
+  //EEPROM.put(LCD_VALUES_ADDRESS, lcdValues);
 }
 
 void receive_mqtt_messages_t(void * pvParams) {
@@ -535,13 +521,13 @@ void receive_mqtt_messages_t(void * pvParams) {
 
     messageSize = mqttClient.parseMessage();
     if (messageSize) {   //Message received
-      topic=mqttClient.messageTopic();
+      topic = mqttClient.messageTopic();
       mqttClient.read((unsigned char*)recMessage, (size_t)sizeof(recMessage)); //Distructive read of message
       recMessage[messageSize] = 0;
       Serial.println("Topic: " + String(topic) + " Msg: " + recMessage);
       readingMessageReceived = false;               // To check if non reading message
       for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
-        if (topic==readings[i].topic) {
+        if (topic == readings[i].topic) {
           index = i;
           if (readings[i].dataType == DATA_TEMPERATURE) {
             update_temperature(recMessage, index);
@@ -552,7 +538,7 @@ void receive_mqtt_messages_t(void * pvParams) {
         }
       }
       for (int i = 0; i < sizeof(settings) / sizeof(settings[0]); i++) {
-        if (topic== readings[i].topic) {
+        if (topic == settings[i].topic) {
           index = i;
           if (settings[i].dataType == DATA_ONOFF) {
             update_on_off(recMessage, index);
@@ -565,9 +551,21 @@ void receive_mqtt_messages_t(void * pvParams) {
 
 void loop() {
 
+  size_t free_heap = 0;
+  size_t new_biggest_free_block = 0;
+
   delay(500);
   timeClient.update();
 
+  free_heap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+  new_biggest_free_block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  if (old_biggest_free_block != new_biggest_free_block) {
+    old_biggest_free_block = new_biggest_free_block;
+    Serial.print(F("Heap data: "));
+    Serial.print(free_heap);
+    Serial.print(F(" largest free block "));
+    Serial.println(new_biggest_free_block);
+  }
   for (int i = 0; i < sizeof(readings) / sizeof(readings[0]); i++) {
     if ((millis() > readings[i].lastMessageTime + (MAX_NO_MESSAGE_SEC * 1000)) && (readings[i].output != NO_READING)) {
       readings[i].changeChar = CHAR_NO_MESSAGE;

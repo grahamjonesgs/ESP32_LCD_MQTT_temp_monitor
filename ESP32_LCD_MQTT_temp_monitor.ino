@@ -96,9 +96,9 @@ LcdValues lcdValues;
 Weather weather = {0.0, 0, 0.0, "", "", 0};
 LcdOutput lcdOutput = {{CHAR_BLANK}, {CHAR_BLANK}, true};
 bool touch_light = false;
-WiFiClientSecure wifiClient;
+WiFiClientSecure wifiClientMqtt;
 WiFiClient wifiClientWeather;
-MqttClient mqttClient(wifiClient);
+MqttClient mqttClient(wifiClientMqtt);
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, TIME_OFFSET);
 

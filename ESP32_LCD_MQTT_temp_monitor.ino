@@ -1,3 +1,4 @@
+
 /*
    For I2C SDA PIN 21
            SLC PIN 22
@@ -58,12 +59,15 @@ struct Weather {
 struct LcdOutput {
   char line1[CHAR_LEN];
   char line2[CHAR_LEN];
-  bool update;
+  int outputType;
+  bool updated;
 };
 
 // Array and LCD string settings
 #define NO_READING "--"            // Screen output before any mesurement is received
 #define DESC_ONOFF "ONO"
+#define OUTPUT_TEMPERATURE 1
+#define OUTPUT_WEATHER 2
 
 // LCD Character settings
 #define CHAR_UP 1
@@ -96,9 +100,9 @@ LcdValues lcdValues;
 Weather weather = {0.0, 0, 0.0, "", "", 0};
 LcdOutput lcdOutput = {{CHAR_BLANK}, {CHAR_BLANK}, true};
 bool touch_light = false;
-WiFiClientSecure wifiClientMqtt;
+WiFiClientSecure wifiClient;
 WiFiClient wifiClientWeather;
-MqttClient mqttClient(wifiClientMqtt);
+MqttClient mqttClient(wifiClient);
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, TIME_OFFSET);
 
@@ -390,13 +394,16 @@ void lcd_output_t(void * pvParameters ) {
 
   while (true) {
     delay(10);
+    if (lcdOutput.updated) {
+      lcdOutput.updated = false;
+      lcd.init();
+    }
+
     if (lcdValues.on || touch_light) {
       lcd.backlight();
-      //lcd.init();
     }
     else {
       lcd.noBacklight();
-      lcd.init();
     }
     lcd.setCursor(0, 0);
     for (int i = 0; i <= LCD_COL; i++) {
@@ -572,10 +579,19 @@ void loop() {
     }
   }
   if ((int)round(second() / 5) % 2 == 0 || touch_light) {
+    if (lcdOutput.outputType != OUTPUT_TEMPERATURE) {
+      lcdOutput.outputType = OUTPUT_TEMPERATURE;
+      lcdOutput.updated=true;
+    }
+    
     lcd_update_temp();
   }
   else
   {
+    if (lcdOutput.outputType != OUTPUT_WEATHER) {
+      lcdOutput.outputType = OUTPUT_WEATHER;
+      lcdOutput.updated=true;
+    }
     lcd_update_weather();
   }
 
